@@ -33,7 +33,6 @@ pub fn openFileAbsolute(file_name: []const u8) !File {
 
 /// Reads file and returns conf variables
 /// `allocator` is expected to be arena allocator
-/// `file` is expected to be absolute.
 /// Caller must free returned memory
 pub fn readFileVars(allocator: Allocator, file: File) !ArrayList([]const u8) {
     const file_size = try file.getEndPos();
