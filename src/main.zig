@@ -30,10 +30,6 @@ pub fn main() !void {
 
     const buf = try ch.readFileVars(allocator, file);
 
-    if (buf.items.len > 0) {
-        _ = try dh.openDirsAbsolute(allocator, buf.items, home);
-    }
-
     var vx = try vaxis.init(allocator, .{});
 
     var loop: vaxis.Loop(Event) = .{ .vaxis = &vx };
@@ -51,9 +47,7 @@ pub fn main() !void {
     var dirs = std.ArrayList([]const u8).init(allocator);
 
     if (buf.items.len > 0) {
-        for (buf.items) |opt| {
-            try dirs.append(opt);
-        }
+        dirs = try dh.openDirsAbsolute(allocator, buf.items, home);
     } else {
         try dirs.append(try allocator.dupe(u8, home));
     }

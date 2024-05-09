@@ -4,7 +4,7 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
 pub fn openDirsAbsolute(allocator: Allocator, dirs: []const []const u8, home: []const u8) !ArrayList([]const u8) {
-    const dir_list = ArrayList([]const u8).init(allocator);
+    var dir_list = ArrayList([]const u8).init(allocator);
     for (dirs) |dir| {
         if (std.mem.eql(u8, dir, "/")) continue;
 
