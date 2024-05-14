@@ -11,16 +11,46 @@ const log = std.log.scoped(.tman);
 
 const conf_file = ".tman.conf";
 
-fn tmuxHandle(allocator: std.mem.Allocator, path: []const u8) void {
+fn tmuxHandle(allocator: std.mem.Allocator, path: []const u8) !void {
     const name = std.fs.path.basename(path);
 
-    const tmux_path = std.mem.concat(allocator, u8, &[_][]const u8{ "tmux new-session -s ", name, " -c ", path }) catch unreachable;
+    const has_session = try std.ChildProcess.run(.{
+        .allocator = allocator,
+        .argv = &[_][]const u8{
+            "tmux",
+            "has-session",
+            "-t",
+            @ptrCast(name),
+        },
+    });
 
-    std.os.linux.execve(
-        @ptrCast(path),
-        @alignCast(tmux_path),
-        &[_][]const u8{},
-    );
+    if (has_session.term.Exited == 0) {
+        _ = try std.ChildProcess.run(.{
+            .allocator = allocator,
+            .argv = &[_][]const u8{
+                "tmux",
+                "switch-client",
+                "-t",
+                @ptrCast(name),
+            },
+        });
+
+        return;
+    } else {
+        _ = try std.ChildProcess.run(.{
+            .allocator = allocator,
+            .argv = &[_][]const u8{
+                "tmux",
+                "new-session",
+                "-ds",
+                @ptrCast(name),
+                "-c",
+                @ptrCast(path),
+            },
+        });
+
+        return;
+    }
 }
 
 pub fn main() !void {
@@ -70,7 +100,7 @@ pub fn main() !void {
         switch (event) {
             .key_press => |key| {
                 if (key.matches(vaxis.Key.enter, .{})) {
-                    tmuxHandle(allocator, dirs.items[selected_dir]);
+                    try tmuxHandle(allocator, dirs.items[selected_dir]);
                 } else if (key.matches(vaxis.Key.down, .{}) and
                     selected_dir < dirs.items.len - 1)
                 {
@@ -85,39 +115,6 @@ pub fn main() !void {
                     break;
                 }
             },
-            // if (key.codepoint == 'c' and key.mods.ctrl or
-            //     key.matches(vaxis.Key.escape, .{}))
-            // {
-            //     break;
-            // } else if (key.matches(vaxis.Key.tab, .{}) or
-            //     key.matches(vaxis.Key.down, .{}))
-            // {
-            //     if (selected_dir == null) {
-            //         selected_dir = 0;
-            //     } else {
-            //         selected_dir.? = @min(
-            //             dirs.items.len - 1,
-            //             selected_dir.? + 1,
-            //         );
-            //     }
-            // } else if (key.matches(vaxis.Key.tab, .{ .shift = true }) or
-            //     key.matches(vaxis.Key.up, .{ .shift = true }))
-            // {
-            //     if (selected_dir == null) {
-            //         selected_dir = 0;
-            //     } else {
-            //         selected_dir.? = selected_dir.? -| 1;
-            //     }
-            // } else if (key.matches(vaxis.Key.enter, .{})) {
-            //     if (selected_dir) |i| {
-            //         // log.err("enter", .{});
-            //         try text_input.insertSliceAtCursor(dirs.items[i]);
-            //         selected_dir = null;
-            //     }
-            // } else {
-            //     if (selected_dir == null)
-            //         try text_input.update(.{ .key_press = key });
-            // }
             .winsize => |ws| {
                 try vx.resize(allocator, ws);
             },
