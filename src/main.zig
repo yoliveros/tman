@@ -24,19 +24,7 @@ fn tmuxHandle(allocator: std.mem.Allocator, path: []const u8) !void {
         },
     });
 
-    if (has_session.term.Exited == 0) {
-        _ = try std.ChildProcess.run(.{
-            .allocator = allocator,
-            .argv = &[_][]const u8{
-                "tmux",
-                "switch-client",
-                "-t",
-                @ptrCast(name),
-            },
-        });
-
-        return;
-    } else {
+    if (has_session.term.Exited == 1) {
         _ = try std.ChildProcess.run(.{
             .allocator = allocator,
             .argv = &[_][]const u8{
@@ -48,9 +36,17 @@ fn tmuxHandle(allocator: std.mem.Allocator, path: []const u8) !void {
                 @ptrCast(path),
             },
         });
-
-        return;
     }
+
+    _ = try std.ChildProcess.run(.{
+        .allocator = allocator,
+        .argv = &[_][]const u8{
+            "tmux",
+            "switch-client",
+            "-t",
+            @ptrCast(name),
+        },
+    });
 }
 
 pub fn main() !void {
@@ -73,6 +69,7 @@ pub fn main() !void {
     const buf = try ch.readFileVars(allocator, file);
 
     var vx = try vaxis.init(allocator, .{});
+    defer vx.deinit(allocator);
 
     var loop: vaxis.Loop(Event) = .{ .vaxis = &vx };
 
@@ -94,6 +91,11 @@ pub fn main() !void {
         try dirs.append(try allocator.dupe(u8, home));
     }
 
+    const temp_dirs = try allocator.dupe([]const u8, dirs.items);
+
+    const text: []const u8 = undefined;
+    _ = text;
+
     while (true) {
         const event = loop.nextEvent();
 
@@ -101,6 +103,8 @@ pub fn main() !void {
             .key_press => |key| {
                 if (key.matches(vaxis.Key.enter, .{})) {
                     try tmuxHandle(allocator, dirs.items[selected_dir]);
+                    text_input.clearAndFree();
+                    break;
                 } else if (key.matches(vaxis.Key.down, .{}) and
                     selected_dir < dirs.items.len - 1)
                 {
@@ -113,6 +117,17 @@ pub fn main() !void {
                     key.matches(vaxis.Key.escape, .{}))
                 {
                     break;
+                } else {
+                    try text_input.update(.{ .key_press = key });
+                    // text += key.codepoint;
+                    // temp_dirs = undefined;
+                    //
+                    // for (temp_dirs, 0..) |opt, j| {
+                    //     const base = std.fs.path.basename(opt);
+                    //     if (std.mem.startsWith(u8, base, text)) {
+                    //         temp_dirs[j] = opt;
+                    //     }
+                    // }
                 }
             },
             .winsize => |ws| {
@@ -124,16 +139,26 @@ pub fn main() !void {
         const win = vx.window();
         win.clear();
 
-        text_input.draw(win);
+        const child = win.child(.{
+            .x_off = 2,
+            .y_off = dirs.items.len + 2,
+        });
+
+        text_input.draw(child);
 
         win.hideCursor();
-        for (dirs.items, 0..) |opt, j| {
+        for (temp_dirs, 0..) |opt, j| {
             var seg = [_]vaxis.Segment{.{
                 .text = opt,
                 .style = if (j == selected_dir) .{ .reverse = true } else .{},
             }};
             _ = try win.print(&seg, .{ .row_offset = j + 1 });
         }
+
+        _ = try win.print(
+            &[_]vaxis.Segment{.{ .text = ">", .style = .{ .reverse = true } }},
+            .{ .row_offset = dirs.items.len + 2 },
+        );
 
         try vx.render();
     }
