@@ -91,10 +91,11 @@ pub fn main() !void {
         try dirs.append(try allocator.dupe(u8, home));
     }
 
-    const temp_dirs = try allocator.dupe([]const u8, dirs.items);
+    var temp_dirs = std.ArrayList([]const u8).init(allocator);
 
-    const text: []const u8 = undefined;
-    _ = text;
+    temp_dirs.appendSlice(dirs.items) catch unreachable;
+
+    var text: []const u8 = allocator.alloc(u8, 512) catch unreachable;
 
     while (true) {
         const event = loop.nextEvent();
@@ -119,21 +120,30 @@ pub fn main() !void {
                     break;
                 } else {
                     try text_input.update(.{ .key_press = key });
-                    // text += key.codepoint;
-                    // temp_dirs = undefined;
-                    //
-                    // for (temp_dirs, 0..) |opt, j| {
-                    //     const base = std.fs.path.basename(opt);
-                    //     if (std.mem.startsWith(u8, base, text)) {
-                    //         temp_dirs[j] = opt;
-                    //     }
-                    // }
+
+                    text = text_input.buf.items;
+
+                    temp_dirs.clearRetainingCapacity();
+                    if (text.len == 0) {
+                        temp_dirs.appendSlice(dirs.items) catch unreachable;
+                    } else {
+                        for (dirs.items) |opt| {
+                            const base = toLowerAll(
+                                allocator,
+                                std.fs.path.basename(opt),
+                            );
+                            const lower_text = toLowerAll(allocator, text);
+                            if (std.mem.indexOf(u8, base, lower_text) != null) {
+                                temp_dirs.append(opt) catch unreachable;
+                            }
+                        }
+                    }
                 }
             },
             .winsize => |ws| {
                 try vx.resize(allocator, ws);
             },
-            else => {},
+            else => unreachable,
         }
 
         const win = vx.window();
@@ -141,13 +151,13 @@ pub fn main() !void {
 
         const child = win.child(.{
             .x_off = 2,
-            .y_off = dirs.items.len + 2,
+            .y_off = temp_dirs.items.len + 2,
         });
 
         text_input.draw(child);
 
         win.hideCursor();
-        for (temp_dirs, 0..) |opt, j| {
+        for (temp_dirs.items, 0..) |opt, j| {
             var seg = [_]vaxis.Segment{.{
                 .text = opt,
                 .style = if (j == selected_dir) .{ .reverse = true } else .{},
@@ -157,11 +167,23 @@ pub fn main() !void {
 
         _ = try win.print(
             &[_]vaxis.Segment{.{ .text = ">", .style = .{ .reverse = true } }},
-            .{ .row_offset = dirs.items.len + 2 },
+            .{ .row_offset = temp_dirs.items.len + 2 },
         );
 
         try vx.render();
     }
+}
+
+fn toLowerAll(allocator: std.mem.Allocator, str: []const u8) []const u8 {
+    if (str.len == 0) return str;
+
+    var n_str = allocator.dupe(u8, str) catch unreachable;
+    var i: usize = 0;
+    while (i < n_str.len) : (i += 1) {
+        n_str[i] = std.ascii.toLower(n_str[i]);
+    }
+
+    return n_str;
 }
 
 const Event = union(enum) {
